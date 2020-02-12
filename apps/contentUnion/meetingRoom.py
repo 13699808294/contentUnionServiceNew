@@ -1645,13 +1645,18 @@ class MeetingRoom(BaseAsync):
     def updateOneMacroInfo(self,macro_channel_guid):
         result = yield self.getOneMacroChannelInfo(macro_channel_guid)
         if result:
+            index_value = None
+            i = 0
             for macro_info in self.macro_channel_info_list:
                 guid = macro_info.get('info')
                 if guid == macro_channel_guid:
-                    macro_info = result
+                    index_value = i
                     break
-            else:
+                i += 1
+            if index_value is None:
                 self.macro_channel_info_list.append(result)
+            else:
+                self.macro_channel_info_list[index_value] = result
         yield self.handleMacroSync(0,{})
 
     @gen.coroutine
