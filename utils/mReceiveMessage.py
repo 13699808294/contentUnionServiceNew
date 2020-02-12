@@ -25,6 +25,7 @@ class MReceiveMessage():
         self.topicList = self.topicList()
 
     #/aaiot/101/send/controlbus/system/heartbeat
+    #/aaiot/{会议室guid}/send/controlbus/event/macro/remove
     def topicList(self):
         topic_list = self.topic.split('/')
         while '' in topic_list:

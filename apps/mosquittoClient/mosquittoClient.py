@@ -147,6 +147,13 @@ class MosquittoClient(BMosquittoClient):
         self.connectObject.subscribe(topic, qos=QOS_LOCAL)  # 使用模式0订阅,本地服务的时间事件
         yield logClient.tornadoDebugLog('订阅主题:({}),qos=({})'.format(topic, QOS_LOCAL))
 
+        topic = '/aaiot/+/send/controlbus/event/macro/add_change'
+        self.connectObject.subscribe(topic, qos=QOS_LOCAL)  # 使用模式0订阅,本地服务的时间事件
+        yield logClient.tornadoDebugLog('订阅主题:({}),qos=({})'.format(topic, QOS_LOCAL))
+
+        topic = '/aaiot/+/send/controlbus/event/macro/remove'
+        self.connectObject.subscribe(topic, qos=QOS_LOCAL)  # 使用模式0订阅,本地服务的时间事件
+        yield logClient.tornadoDebugLog('订阅主题:({}),qos=({})'.format(topic, QOS_LOCAL))
     @gen.coroutine
     def get_meeting_room_status(self,msg):
         '''

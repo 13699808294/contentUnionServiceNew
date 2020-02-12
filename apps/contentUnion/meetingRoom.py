@@ -229,11 +229,12 @@ class MeetingRoom(BaseAsync):
                         yield device_object.dayUpdateSelfOnSwitch()
             elif event_type == 'schedule':
                 yield self.handleScheduleMessage(port,channel, data)
-
             elif event_type == 'recognition':
                 yield self.handleRecognitionMessage(data)
             elif event_type == 'update':
                 yield self.localUpdate(data)
+            elif event_type == 'macro':
+                yield self.HandleMacroUpdate(mReceiveObject)
 
 
     #******************************************************************************************************************#
@@ -466,6 +467,7 @@ class MeetingRoom(BaseAsync):
                 function = function_info.get('function')
                 kwargs = function_info.get('kwargs')
                 yield function(self.schedule_status,data,**kwargs)
+
     @gen.coroutine
     def getSelfScheduleInfo(self):
         info = {
@@ -515,6 +517,21 @@ class MeetingRoom(BaseAsync):
         yield logClient.tornadoInfoLog('会议室：({})排程状态更新为({})'.format(self.name, self.schedule_status))
     # ------------------------------------------------------------------------------------------------------------------#
 
+    @gen.coroutine
+    def HandleMacroUpdate(self,mReceiveObject):
+        type_ = mReceiveObject.port
+        data = mReceiveObject.data
+        try:
+            data = json.loads(data)
+            macro_channel_guid = data.get('macro_channel_guid')
+        except:
+            return
+        if type_ == 'add_change':
+            #新增或修改
+            yield self.updateOneMacroInfo(macro_channel_guid)
+        elif type_ == 'remove':
+            #删除
+            yield self.deleteOneMacroInfo(macro_channel_guid)
     # todo：处理网关同步巨集     服务器 > 网关
     @gen.coroutine
     def handleMacroSync(self, port, data):
@@ -1561,63 +1578,93 @@ class MeetingRoom(BaseAsync):
 
     #todo:更新巨集通道
     @gen.coroutine
-    def updateMacroChannel(self):
+    def updateMacroChannel(self,macro_channel_guid=None):
         self.macro_channel_info_list = []
         for channel_guid, channel_object in self.channel_dict.items():
             if channel_object.type != 'macro':
                 continue
-            #找到聚集通道的巨集关系
-            data = {
-                'database': self.company_db,
-                'fields': [ 'macro_channel_guid_id',
-                           'control_channel_guid_id',
-                           'name',
-                           'value',
-                           'after_wait',
-                           'sort_index',
-                           'target_status'],
-                'eq': {
-                    'is_delete': False,
-                    'macro_channel_guid_id': channel_guid
-                },
-                'sortInfo': [
-                    {'target_status':''},
-                    {'sort_index': ''},
-                ]
-            }
-            msg = yield mysqlClient.tornadoSelectAll('d_macro_relation', data)
-            if msg['ret'] != '0':
-                yield logClient.tornadoErrorLog('数据库查询错误:{}'.format('d_macro_relation'))
-                continue
-            macro_relations = msg['msg']
-            macro = {}
-            macro['jobs'] = {
-                'on': [],
-                'off': []
-            }
-            # macro['info'] = self.channel_dict[channel_guid]
-            macro['info'] = channel_guid
-            macro['feedbackCondition'] = ''
-            for macro_relation in macro_relations:
-                macro_info = {}
-                #'on'状态聚集关系
-                if macro_relation['target_status'] == 1:
-                    #只绑定通道guid,不绑定对象
-                    macro_info['channel_guid'] = macro_relation['control_channel_guid_id']
-                    macro_info['name'] = macro_relation['name']
-                    macro_info['value'] = macro_relation['value']
-                    macro_info['after_wait'] = macro_relation['after_wait']
-                    macro['jobs']['on'].append(macro_info)
-                #'off'状态聚集关系
-                elif macro_relation['target_status'] == 0:
-                    # 只绑定通道guid,不绑定对象
-                    macro_info['channel_guid'] = macro_relation['control_channel_guid_id']
-                    macro_info['name'] = macro_relation['name']
-                    macro_info['value'] = macro_relation['value']
-                    macro_info['after_wait'] = macro_relation['after_wait']
-                    macro['jobs']['off'].append(macro_info)
+            result = yield self.getOneMacroChannelInfo(channel_guid)
+            if result:
+                self.macro_channel_info_list.append(result)
+
+    @gen.coroutine
+    def getOneMacroChannelInfo(self,macro_channel_guid):
+        #找到聚集通道的巨集关系
+        data = {
+            'database': self.company_db,
+            'fields': [ 'macro_channel_guid_id',
+                       'control_channel_guid_id',
+                       'name',
+                       'value',
+                       'after_wait',
+                       'sort_index',
+                       'target_status'],
+            'eq': {
+                'is_delete': False,
+                'macro_channel_guid_id': macro_channel_guid
+            },
+            'sortInfo': [
+                {'target_status':''},
+                {'sort_index': ''},
+            ]
+        }
+        msg = yield mysqlClient.tornadoSelectAll('d_macro_relation', data)
+        if msg['ret'] != '0':
+            yield logClient.tornadoErrorLog('数据库查询错误:{}'.format('d_macro_relation'))
+            return
+        macro_relations = msg['msg']
+        macro = {}
+        macro['jobs'] = {
+            'on': [],
+            'off': []
+        }
+        macro['info'] = macro_channel_guid
+        macro['feedbackCondition'] = ''
+        for macro_relation in macro_relations:
+            macro_info = {}
+            #'on'状态聚集关系
+            if macro_relation['target_status'] == 1:
+                #只绑定通道guid,不绑定对象
+                macro_info['channel_guid'] = macro_relation['control_channel_guid_id']
+                macro_info['name'] = macro_relation['name']
+                macro_info['value'] = macro_relation['value']
+                macro_info['after_wait'] = macro_relation['after_wait']
+                macro['jobs']['on'].append(macro_info)
+            #'off'状态聚集关系
+            elif macro_relation['target_status'] == 0:
+                # 只绑定通道guid,不绑定对象
+                macro_info['channel_guid'] = macro_relation['control_channel_guid_id']
+                macro_info['name'] = macro_relation['name']
+                macro_info['value'] = macro_relation['value']
+                macro_info['after_wait'] = macro_relation['after_wait']
+                macro['jobs']['off'].append(macro_info)
+        else:
+            return macro
+
+    @gen.coroutine
+    def updateOneMacroInfo(self,macro_channel_guid):
+        result = yield self.getOneMacroChannelInfo(macro_channel_guid)
+        if result:
+            for macro_info in self.macro_channel_info_list:
+                guid = macro_info.get('info')
+                if guid == macro_channel_guid:
+                    macro_info = result
+                    break
             else:
-                self.macro_channel_info_list.append(macro)
+                self.macro_channel_info_list.append(result)
+        yield self.handleMacroSync(0,{})
+
+    @gen.coroutine
+    def deleteOneMacroInfo(self,macro_channel_guid):
+        for macro_info in self.macro_channel_info_list:
+            guid = macro_info.get('info')
+            if guid == macro_channel_guid:
+                delete_ = macro_info
+                break
+        else:
+            return
+        self.macro_channel_info_list.remove(delete_)
+        yield self.handleMacroSync(0, {})
 
     def TopicToList(self,topic):
         topic_list = topic.split('/')
